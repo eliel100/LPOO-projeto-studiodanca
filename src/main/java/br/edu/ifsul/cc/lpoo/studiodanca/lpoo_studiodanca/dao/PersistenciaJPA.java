@@ -11,38 +11,36 @@ import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
 import javax.persistence.TypedQuery;
 
-/**
- *
- * @author vanessalagomachado
- */
-public class PersistenciaJPA implements InterfacePersistencia{
+public class PersistenciaJPA implements InterfacePersistencia {
 
-    EntityManager entity;
-    EntityManagerFactory factory;
+    public EntityManager entity;
+    private EntityManagerFactory factory;
 
     public PersistenciaJPA() {
         factory = Persistence.createEntityManagerFactory("pu_studio_danca");
         entity = factory.createEntityManager();
     }
-    
-    
-    
-    
+
     @Override
     public Boolean conexaoAberta() {
+        if (entity == null || !entity.isOpen()) {
+            entity = factory.createEntityManager();
+        }
         return entity.isOpen();
     }
 
     @Override
     public void fecharConexao() {
-        entity.close();
+        if (entity != null && entity.isOpen()) {
+            entity.close();
+        }
     }
 
     @Override
     public Object find(Class c, Object id) throws Exception {
         return entity.find(c, id);
     }
-    
+
     public List<Modalidade> buscarTodasModalidades() {
         TypedQuery<Modalidade> query = entity.createQuery("SELECT m FROM Modalidade m", Modalidade.class);
         return query.getResultList();
@@ -50,16 +48,51 @@ public class PersistenciaJPA implements InterfacePersistencia{
 
     @Override
     public void persist(Object o) throws Exception {
-        entity.getTransaction().begin();
-        entity.persist(o);
-        entity.getTransaction().commit();
+        try {
+            conexaoAberta();
+            entity.getTransaction().begin();
+
+            if (o instanceof Modalidade) {
+                Modalidade modalidade = (Modalidade) o;
+                if (modalidade.getId() != null) {
+                    // Se o id não for nulo, verifica se já existe no banco
+                    Modalidade existing = entity.find(Modalidade.class, modalidade.getId());
+                    if (existing != null) {
+                        // Atualiza o existente
+                        entity.merge(modalidade);
+                    } else {
+                        // Caso contrário, persiste uma nova
+                        entity.persist(modalidade);
+                    }
+                } else {
+                    // Se não tiver id, persiste como novo
+                    entity.persist(modalidade);
+                }
+            } else {
+                entity.persist(o);
+            }
+
+            entity.getTransaction().commit();
+        } catch (Exception e) {
+            if (entity.getTransaction().isActive()) {
+                entity.getTransaction().rollback();
+            }
+            throw e;
+        }
     }
 
     @Override
     public void remover(Object o) throws Exception {
-        entity.getTransaction().begin();
-        entity.remove(o);
-        entity.getTransaction().commit();
+        try {
+            conexaoAberta();
+            entity.getTransaction().begin();
+            entity.remove(o);
+            entity.getTransaction().commit();
+        } catch (Exception e) {
+            if (entity.getTransaction().isActive()) {
+                entity.getTransaction().rollback();
+            }
+            throw e;
+        }
     }
-    
 }
